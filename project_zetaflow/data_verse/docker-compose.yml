@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  clickhouse-server:
+    image: clickhouse/clickhouse-server:latest # Use the official ClickHouse image
+    container_name: zf-clickhouse-db
+    ports:
+      - "8123:8123" # HTTP interface
+      - "9000:9000" # Native TCP interface
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      # You can mount custom configuration files if needed:
+      # - ./clickhouse_config/config.xml:/etc/clickhouse-server/config.xml
+      # - ./clickhouse_config/users.xml:/etc/clickhouse-server/users.xml
+      # You might also want to mount a directory for initialization scripts:
+      # - ./db_init:/docker-entrypoint-initdb.d
+    ulimits: # Recommended ulimits for ClickHouse
+      nofile:
+        soft: 262144
+        hard: 262144
+    restart: unless-stopped
+    environment:
+      # Default user 'default' has no password.
+      # For production, you should set a password, e.g., via users.xml or environment variables.
+      # CLICKHOUSE_USER: your_user # Optional: define a user
+      # CLICKHOUSE_PASSWORD: your_strong_password # Optional: define a password for the user
+      CLICKHOUSE_DB: zeta_zeros_db # Optional: create a database on startup
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ingestion-api-service:
+  #   build:
+  #	 context: ./api # Assuming your FastAPI app is in the 'api' subdirectory
+  #	 dockerfile: Dockerfile # You'll need to create this Dockerfile for your API
+  #   container_name: zf-ingestion-api
+  #   ports:
+  #	 - "8000:8000" # Expose API port
+  #   depends_on:
+  #	 clickhouse-server:
+  #	   condition: service_healthy # Wait for ClickHouse to be healthy
+  #   environment:
+  #	 DATABASE_URL: "clickhouse://clickhouse-server:9000/zeta_zeros_db"
+  #	 # Add other environment variables your API needs
+  #   volumes:
+  #	 - ./api:/app/api # Mount your API code for development (optional)
+  #   restart: unless-stopped
+
+volumes:
+  clickhouse_data: # Persists ClickHouse data
+
+# Instructions:
+# 1. Save this file as docker-compose.yml in the 'data_verse' directory.
+# 2. To start the ClickHouse service:
+#	docker-compose up -d clickhouse-server
+# 3. To stop the service:
+#	docker-compose down
+#
+# For the Ingestion & API Service:
+# - You would need to create a Dockerfile for your FastAPI application (e.g., in data_verse/api/Dockerfile).
+# - Then, you can uncomment the 'ingestion-api-service' section.
+# - And run `docker-compose up -d` to start both services.
+#
+# Example schema for zeta_zeros_db (to be created via API or init script):
+# CREATE TABLE IF NOT EXISTS zeta_zeros_db.zeros (
+#	 `id` UInt64,						  // Unique ID or index of the zero
+#	 `height_t` Decimal(38, 18),		  // Imaginary part of the zero, high precision
+#	 `height_t_str` String,				  // Imaginary part as string for full precision storage
+#	 `precision_bits` UInt16,			  // Precision at which it was computed
+#	 `computation_method` String,		  // e.g., "Odlyzko-Schonhage", "Gram_Points"
+#	 `verification_status` Enum8('unverified' = 0, 'verified' = 1, 'candidate' = 2),
+#	 `source` String,					  // e.g., "Odlyzko_Table", "ZetaGrid", "ProjectZetaFlow_OS"
+#	 `computation_timestamp` DateTime,	  // When the zero was computed/ingested
+#	 `raw_data_ref` String				  // Reference to raw computation output if stored elsewhere
+# ) ENGINE = MergeTree()
+# ORDER BY height_t
+# PRIMARY KEY height_t;
+#
+# Note on QuestDB:
+# If you prefer QuestDB, the service definition would be different.
+# Example for QuestDB:
+#
+# questdb-server:
+#   image: questdb/questdb:latest
+#   container_name: zf-questdb
+#   ports:
+#	- "9000:9000"  # ILP TCP protocol
+#	- "9009:9009"  # PSQL wire protocol
+#	- "8812:8812"  # REST API
+#   volumes:
+#	- questdb_data:/var/lib/questdb
+#   restart: unless-stopped
+#
+# volumes:
+#  questdb_data:
+#
+# Choose the database that best fits the project's evolving needs.
+# ClickHouse is chosen here as per initial prompt.
